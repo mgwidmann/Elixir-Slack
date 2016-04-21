@@ -25,7 +25,7 @@ def application do
 end
 
 def deps do
-  [{:slack, "~> 0.3.0"},
+  [{:slack, "~> 0.4.2"},
    {:websocket_client, git: "https://github.com/jeremyong/websocket_client"}]
 end
 ```
@@ -37,9 +37,9 @@ callback methods.
 defmodule SlackRtm do
   use Slack
 
-  def init(initial_state, slack) do
+  def handle_connect(slack, state) do
     IO.puts "Connected as #{slack.me.name}"
-    {:ok, initial_state}
+    {:ok, state}
   end
 
   def handle_message(message = %{type: "message"}, slack, state) do

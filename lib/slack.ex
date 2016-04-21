@@ -80,12 +80,18 @@ defmodule Slack do
       alias Slack.Web
 
       def start_link(token, initial_state, client \\ :websocket_client) do
-        {:ok, rtm} = Slack.Rtm.start(token)
-
-        state = %{rtm: rtm, state: initial_state, client: client}
-
-        url = String.to_char_list(rtm.url)
-        client.start_link(url, __MODULE__, state)
+        case Slack.Rtm.start(token) do
+          {:ok, rtm} ->
+            state = %{rtm: rtm, state: initial_state, client: client}
+            url = String.to_char_list(rtm.url)
+            client.start_link(url, __MODULE__, state)
+          {:error, %HTTPoison.Error{reason: :connect_timeout}} ->
+            {:error, "Timed out while connecting to the Slack RTM API"}
+          {:error, %HTTPoison.Error{reason: :nxdomain}} ->
+            {:error, "Could not connect to the Slack RTM API"}
+          {:error, error} ->
+            {:error, error}
+        end
       end
 
       def init(%{rtm: rtm, client: client, state: state}, socket) do
@@ -111,7 +117,7 @@ defmodule Slack do
       end
 
       def websocket_info(message, _connection, %{slack: slack, state: state}) do
-        handle_info(message, slack, state)
+        {:ok, state} = handle_info(message, slack, state)
         {:ok, %{slack: slack, state: state}}
       end
 
@@ -126,8 +132,8 @@ defmodule Slack do
       def websocket_handle({:text, message}, _con, %{slack: slack, state: state}) do
         message = prepare_message message
         if Map.has_key?(message, :type) do
-          {:ok, state} = handle_message(message, slack, state)
           {:ok, slack} = handle_slack(message, slack)
+          {:ok, state} = handle_message(message, slack, state)
         end
 
         {:ok, %{slack: slack, state: state}}

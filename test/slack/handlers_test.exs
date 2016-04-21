@@ -4,14 +4,15 @@ defmodule Slack.HandlersTest do
 
   test "channel_joined sets is_member to true" do
     {:ok, new_slack} = Handlers.handle_slack(
-      %{type: "channel_joined", channel: %{id: "123"}},
+      %{type: "channel_joined", channel: %{id: "123", members: ["123456", "654321"]}},
       slack
     )
 
     assert new_slack.channels["123"].is_member == true
+    assert new_slack.channels["123"].members == ["123456", "654321"]
   end
 
-  test "channel_joined sets is_member to true" do
+  test "channel_left sets is_member to false" do
     {:ok, new_slack} = Handlers.handle_slack(
       %{type: "channel_left", channel: %{id: "123"}},
       slack
@@ -122,6 +123,61 @@ defmodule Slack.HandlersTest do
 
     assert new_slack.ims["123"] == nil
   end
+  
+  test "channel_join message should add member" do
+    {:ok, new_slack} = Handlers.handle_slack(
+      %{type: "message", subtype: "channel_join", user: "U456", channel: "123"},
+      slack
+    )
+
+    assert (new_slack.channels["123"].members |> Enum.sort) == ["U123", "U456"]
+  end
+
+  test "channel_leave message should remove member" do
+    {:ok, new_slack} = Handlers.handle_slack(
+      %{type: "message", subtype: "channel_leave", user: "U123", channel: "123"},
+      slack
+    )
+
+    assert new_slack.channels["123"].members == []
+  end
+
+  test "group_joined event should add group" do
+    {:ok, new_slack} = Handlers.handle_slack(
+      %{type: "group_joined", channel: %{id: "G123", members: ["U123", "U456"]}},
+      slack
+    )
+
+    assert new_slack.groups["G123"]
+    assert new_slack.groups["G123"].members == ["U123", "U456"]
+  end
+
+  test "group_join message should add user to member list" do
+    {:ok, new_slack} = Handlers.handle_slack(
+      %{type: "message", subtype: "group_join", channel: "G000", user: "U000"},
+      slack
+    )
+
+    assert Enum.member?(new_slack.groups["G000"][:members], "U000")
+  end
+
+  test "group_leave message should remove user from member list" do
+    {:ok, new_slack} = Handlers.handle_slack(
+      %{type: "message", subtype: "group_leave", channel: "G000", user: "U111"},
+      slack
+    )
+
+    refute Enum.member?(new_slack.groups["G000"].members, "U111")
+  end
+
+  test "group_left message should remove group altogether" do
+    {:ok, new_slack} = Handlers.handle_slack(
+      %{type: "group_left", channel: "G000"},
+      slack
+    )
+
+    refute new_slack.groups["G000"]
+  end
 
   defp slack do
     %{
@@ -131,7 +187,8 @@ defmodule Slack.HandlersTest do
           id: 123,
           name: "foo",
           is_member: nil,
-          is_archived: nil
+          is_archived: nil,
+          members: ["U123"]
         }
       },
       team: %{
@@ -140,6 +197,12 @@ defmodule Slack.HandlersTest do
       users: %{
         "123": %{
           name: "Bar"
+        }
+      },
+      groups: %{
+        "G000" => %{
+          name: "secret-group",
+          members: ["U111", "U222"]
         }
       },
       bots: %{
